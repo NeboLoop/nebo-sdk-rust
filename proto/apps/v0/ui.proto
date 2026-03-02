@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package apps.v0;
 
-option go_package = "github.com/neboloop/nebo/internal/apps/pb";
+option go_package = "github.com/NeboLoop/nebo/internal/apps/pb";
 
 import "proto/apps/v0/common.proto";
 
@@ -37,3 +37,4 @@ message HttpResponse {
   map<string, string> headers = 2;     // Response headers
   bytes body = 3;                      // Response body
 }
+
