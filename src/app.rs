@@ -1,7 +1,4 @@
-use std::path::Path;
-use tokio::net::UnixListener;
 use tokio::signal;
-use tokio_stream::wrappers::UnixListenerStream;
 use tonic::transport::Server;
 
 use crate::env::AppEnv;
@@ -83,7 +80,10 @@ impl NeboApp {
         self
     }
 
-    /// Start the gRPC server on the Unix socket and block until SIGTERM/SIGINT.
+    /// Start the gRPC server and block until SIGTERM/SIGINT.
+    ///
+    /// On Unix: listens on a Unix domain socket (NEBO_APP_SOCK is a file path).
+    /// On Windows: listens on TCP localhost (NEBO_APP_SOCK is `host:port` or just a port).
     pub async fn run(self) -> Result<(), NeboError> {
         if self.tool.is_none()
             && self.channel.is_none()
@@ -95,12 +95,7 @@ impl NeboApp {
             return Err(NeboError::NoHandlers);
         }
 
-        // Remove stale socket
         let sock_path = &self.env.sock_path;
-        let _ = std::fs::remove_file(sock_path);
-
-        let uds = UnixListener::bind(sock_path)?;
-        let uds_stream = UnixListenerStream::new(uds);
 
         let mut builder = Server::builder();
 
@@ -155,17 +150,49 @@ impl NeboApp {
             )
         }));
 
-        eprintln!(
-            "[{}] listening on {}",
-            self.env.name,
-            Path::new(sock_path).display()
-        );
+        // Platform-specific listener
+        #[cfg(unix)]
+        {
+            use std::path::Path;
+            use tokio::net::UnixListener;
+            use tokio_stream::wrappers::UnixListenerStream;
 
-        router
-            .serve_with_incoming_shutdown(uds_stream, async {
-                let _ = signal::ctrl_c().await;
-            })
-            .await?;
+            let _ = std::fs::remove_file(sock_path);
+            let uds = UnixListener::bind(sock_path)?;
+            let uds_stream = UnixListenerStream::new(uds);
+
+            eprintln!(
+                "[{}] listening on {}",
+                self.env.name,
+                Path::new(sock_path).display()
+            );
+
+            router
+                .serve_with_incoming_shutdown(uds_stream, async {
+                    let _ = signal::ctrl_c().await;
+                })
+                .await?;
+        }
+
+        #[cfg(windows)]
+        {
+            let addr = if sock_path.contains(':') {
+                sock_path.to_string()
+            } else {
+                format!("127.0.0.1:{}", sock_path)
+            };
+            let addr: std::net::SocketAddr = addr
+                .parse()
+                .map_err(|e| NeboError::Other(format!("invalid address '{}': {}", addr, e)))?;
+
+            eprintln!("[{}] listening on {}", self.env.name, addr);
+
+            router
+                .serve_with_shutdown(addr, async {
+                    let _ = signal::ctrl_c().await;
+                })
+                .await?;
+        }
 
         Ok(())
     }
