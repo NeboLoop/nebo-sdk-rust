@@ -14,9 +14,11 @@ pub struct AppEnv {
     pub data_dir: String,
     /// `NEBO_API_URL`: Nebo's local API, `http://127.0.0.1:<port>`.
     pub api_url: String,
-    /// `NEBO_APP_TOKEN`: this launch's secret. Send it as `Authorization:
-    /// Bearer <token>` to `api_url`; Nebo sends it on every call to the
-    /// sidecar, and the SDK refuses calls without it.
+    /// `NEBO_APP_TOKEN`: this launch's token for calling Nebo. Send it as
+    /// `Authorization: Bearer <token>` to `api_url`. Outbound only: Nebo never
+    /// sends it to the app, and the app never accepts it. (Nebo's calls to the
+    /// app carry a different token, `NEBO_SIDECAR_TOKEN`, which the SDK checks
+    /// and keeps out of your code.)
     pub token: String,
 }
 

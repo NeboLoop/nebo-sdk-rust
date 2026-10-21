@@ -1,8 +1,8 @@
 /// SDK error type for Nebo app operations.
 #[derive(Debug, thiserror::Error)]
 pub enum NeboError {
-    #[error("NEBO_APP_TOKEN environment variable is not set (Nebo sets it when it launches the app)")]
-    NoToken,
+    #[error("NEBO_SIDECAR_TOKEN environment variable is not set (Nebo sets it when it launches the app)")]
+    NoSidecarToken,
 
     #[error("no capability handlers registered")]
     NoHandlers,

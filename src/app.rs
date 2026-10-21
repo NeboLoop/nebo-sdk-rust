@@ -25,19 +25,23 @@ pub struct NeboApp {
     comm: Option<Box<dyn crate::comm::CommHandler>>,
     schedule: Option<Box<dyn crate::schedule::ScheduleHandler>>,
     on_configure: Option<Box<dyn Fn(std::collections::HashMap<String, String>) + Send + Sync>>,
+    /// `NEBO_SIDECAR_TOKEN`: the token every call from Nebo carries. Inbound
+    /// only, and never handed to the app's code.
+    sidecar_token: String,
 }
 
 impl NeboApp {
     /// Create a new NeboApp from the environment Nebo launches it with.
-    /// Fails without `NEBO_APP_TOKEN`: an app run outside Nebo has no one to
-    /// serve.
+    /// Fails without `NEBO_SIDECAR_TOKEN`: an app run outside Nebo has no one
+    /// to serve.
     pub fn new() -> Result<Self, NeboError> {
-        let env = AppEnv::load();
-        if env.token.is_empty() {
-            return Err(NeboError::NoToken);
+        let sidecar_token = std::env::var("NEBO_SIDECAR_TOKEN").unwrap_or_default();
+        if sidecar_token.is_empty() {
+            return Err(NeboError::NoSidecarToken);
         }
         Ok(Self {
-            env,
+            env: AppEnv::load(),
+            sidecar_token,
             tool: None,
             channel: None,
             gateway: None,
@@ -96,8 +100,9 @@ impl NeboApp {
     ///
     /// - listens on `127.0.0.1` (never another interface), on a port the OS
     ///   picks, and prints `nebo-app-listening <address>` on stdout;
-    /// - refuses every call that does not carry this launch's token as
-    ///   `authorization: Bearer <NEBO_APP_TOKEN>`;
+    /// - refuses every call that does not carry this launch's sidecar token
+    ///   as `authorization: Bearer <NEBO_SIDECAR_TOKEN>` (the app's own
+    ///   `NEBO_APP_TOKEN`, which is for calling Nebo, is refused too);
     /// - returns when stdin closes (Nebo is gone, however it went), on
     ///   SIGTERM, or on Ctrl-C.
     pub async fn run(self) -> Result<(), NeboError> {
@@ -114,7 +119,7 @@ impl NeboApp {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
         let addr = listener.local_addr()?;
 
-        let mut builder = Server::builder().layer(InterceptorLayer::new(Authorize { token: self.env.token.clone() }));
+        let mut builder = Server::builder().layer(InterceptorLayer::new(Authorize { token: self.sidecar_token.clone() }));
 
         // Register each capability's gRPC service
         let mut router = builder.add_optional_service(self.tool.map(|h| {
@@ -182,7 +187,7 @@ impl NeboApp {
     }
 }
 
-/// Lets a call through only if it carries the launch's token as
+/// Lets a call through only if it carries the launch's sidecar token as
 /// `authorization: Bearer <token>`.
 #[derive(Clone)]
 struct Authorize {
@@ -202,7 +207,7 @@ impl Interceptor for Authorize {
         if !self.token.is_empty() && same(presented.as_bytes(), self.token.as_bytes()) {
             Ok(req)
         } else {
-            Err(Status::unauthenticated("missing or wrong app token"))
+            Err(Status::unauthenticated("missing or wrong sidecar token"))
         }
     }
 }

@@ -16,7 +16,8 @@ mod pb {
     include!("pb/apps.v0.rs");
 }
 
-const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const SIDECAR_TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const APP_TOKEN: &str = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
 
 fn example() -> PathBuf {
     let deps = std::env::current_exe().unwrap().parent().unwrap().to_path_buf();
@@ -37,7 +38,8 @@ fn launch() -> (Child, SocketAddr) {
         .env("NEBO_APP_DIR", &data)
         .env("NEBO_DATA_DIR", &data)
         .env("NEBO_API_URL", "http://127.0.0.1:27895")
-        .env("NEBO_APP_TOKEN", TOKEN)
+        .env("NEBO_APP_TOKEN", APP_TOKEN)
+        .env("NEBO_SIDECAR_TOKEN", SIDECAR_TOKEN)
         .current_dir(&data)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -94,8 +96,25 @@ async fn it_listens_on_loopback_and_refuses_calls_without_the_token() {
     assert_eq!(none.code(), tonic::Code::Unauthenticated, "{none:?}");
     let wrong = name(addr, Some("Bearer not-the-token")).await.expect_err("another token");
     assert_eq!(wrong.code(), tonic::Code::Unauthenticated, "{wrong:?}");
-    let ok = name(addr, Some(&format!("Bearer {TOKEN}"))).await.expect("the launch token");
+    let outbound = name(addr, Some(&format!("Bearer {APP_TOKEN}"))).await.expect_err("the app's outbound token");
+    assert_eq!(outbound.code(), tonic::Code::Unauthenticated, "{outbound:?}");
+    let ok = name(addr, Some(&format!("Bearer {SIDECAR_TOKEN}"))).await.expect("the sidecar token");
     assert_eq!(ok, "calculator");
+
+    // Nebo's health probe: UIService.HealthCheck with the sidecar token. The
+    // calculator has no UI service, so it answers Unimplemented — once the
+    // token is checked, never before.
+    let probe = |bearer: Option<String>| async move {
+        let channel = tonic::transport::Endpoint::from_shared(format!("http://{addr}")).unwrap().connect_lazy();
+        let mut client = pb::ui_service_client::UiServiceClient::new(channel);
+        let mut req = tonic::Request::new(pb::HealthCheckRequest {});
+        if let Some(b) = bearer {
+            req.metadata_mut().insert("authorization", b.parse().unwrap());
+        }
+        client.health_check(req).await.unwrap_err().code()
+    };
+    assert_eq!(probe(None).await, tonic::Code::Unauthenticated);
+    assert_eq!(probe(Some(format!("Bearer {SIDECAR_TOKEN}"))).await, tonic::Code::Unimplemented);
 
     child.kill().unwrap();
     child.wait().unwrap();
@@ -127,9 +146,10 @@ fn sigterm(pid: u32) {
 }
 
 #[test]
-fn it_will_not_start_without_a_token() {
+fn it_will_not_start_without_the_sidecar_token() {
     let out = Command::new(example())
         .env_clear()
+        .env("NEBO_APP_TOKEN", APP_TOKEN)
         .stdin(Stdio::piped())
         .output()
         .expect("run the example");
