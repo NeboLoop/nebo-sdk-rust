@@ -32,15 +32,21 @@ pub struct NeboApp {
 
 impl NeboApp {
     /// Create a new NeboApp from the environment Nebo launches it with.
-    /// Fails without `NEBO_SIDECAR_TOKEN`: an app run outside Nebo has no one
-    /// to serve.
+    /// Fails without `NEBO_SIDECAR_TOKEN` or `NEBO_APP_TOKEN`: an app run
+    /// outside Nebo has no one to serve.
     pub fn new() -> Result<Self, NeboError> {
         let sidecar_token = std::env::var("NEBO_SIDECAR_TOKEN").unwrap_or_default();
         if sidecar_token.is_empty() {
             return Err(NeboError::NoSidecarToken);
         }
+        let env = AppEnv::load();
+        // The health proof is keyed with it: without it, Nebo can't tell this
+        // app from something else on its port.
+        if env.token.is_empty() {
+            return Err(NeboError::NoAppToken);
+        }
         Ok(Self {
-            env: AppEnv::load(),
+            env,
             sidecar_token,
             tool: None,
             channel: None,
@@ -103,6 +109,8 @@ impl NeboApp {
     /// - refuses every call that does not carry this launch's sidecar token
     ///   as `authorization: Bearer <NEBO_SIDECAR_TOKEN>` (the app's own
     ///   `NEBO_APP_TOKEN`, which is for calling Nebo, is refused too);
+    /// - answers Nebo's health probe with the proof it asks for (the UI
+    ///   service is always served for it, even for an app with no UI);
     /// - returns when stdin closes (Nebo is gone, however it went), on
     ///   SIGTERM, or on Ctrl-C.
     pub async fn run(self) -> Result<(), NeboError> {
@@ -146,12 +154,15 @@ impl NeboApp {
             })
         }));
 
-        router = router.add_optional_service(self.ui.map(|h| {
-            pb::ui_service_server::UiServiceServer::new(crate::ui::UiBridge {
-                handler: h,
-                on_configure: None,
-                env: self.env.clone(),
-            })
+        router = router.add_service(pb::ui_service_server::UiServiceServer::new(crate::ui::UiBridge {
+            handler: self.ui,
+            proof: crate::ui::HealthProof {
+                app_token: self.env.token.clone(),
+                sidecar_token: self.sidecar_token.clone(),
+                port: addr.port(),
+            },
+            on_configure: None,
+            env: self.env.clone(),
         }));
 
         router = router.add_optional_service(self.comm.map(|h| {

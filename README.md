@@ -68,6 +68,12 @@ Building needs no `protoc`: the generated gRPC code is vendored in
   as `authorization: Bearer <token>`. Nebo sends it on every call, including
   its health probe (`UIService.HealthCheck`). The SDK keeps it out of your
   code, and refuses the app's own `NEBO_APP_TOKEN` on incoming calls.
+- It answers Nebo's health probe with a proof: the probe carries a nonce in
+  `x-nebo-challenge`, and the SDK answers with `x-nebo-proof` = hex
+  HMAC-SHA256(key `NEBO_APP_TOKEN`, nonce || `NEBO_SIDECAR_TOKEN` || port as
+  2 bytes big-endian). Nebo never sends `NEBO_APP_TOKEN`, so nothing that took
+  over the app's port can answer it. The UI service is always served for this,
+  even for an app with no UI handler. Your code never sees it.
 - It returns when its stdin closes (Nebo holds the other end, so this is how
   the app notices Nebo is gone, however it went), on SIGTERM, or on Ctrl-C.
 
@@ -78,7 +84,7 @@ Your code reads the rest from `app.env()`:
 | `dir` | `NEBO_APP_DIR` | The app's code folder, replaced on every update |
 | `data_dir` | `NEBO_DATA_DIR` | The app's own data folder, kept across updates; also the working directory |
 | `api_url` | `NEBO_API_URL` | Nebo's local API, `http://127.0.0.1:<port>` |
-| `token` | `NEBO_APP_TOKEN` | This launch's token for calling Nebo, outbound only: send it as `Authorization: Bearer <token>` to `api_url` |
+| `token` | `NEBO_APP_TOKEN` | This launch's token for calling Nebo, outbound only: send it as `Authorization: Bearer <token>` to `api_url`. Required: the health proof is keyed with it |
 | `id`, `name`, `version` | `NEBO_APP_ID`, `NEBO_APP_NAME`, `NEBO_APP_VERSION` | From the manifest |
 
 Two tokens, one direction each: if another process ever got hold of the app's

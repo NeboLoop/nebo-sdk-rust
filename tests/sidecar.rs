@@ -101,20 +101,54 @@ async fn it_listens_on_loopback_and_refuses_calls_without_the_token() {
     let ok = name(addr, Some(&format!("Bearer {SIDECAR_TOKEN}"))).await.expect("the sidecar token");
     assert_eq!(ok, "calculator");
 
-    // Nebo's health probe: UIService.HealthCheck with the sidecar token. The
-    // calculator has no UI service, so it answers Unimplemented — once the
-    // token is checked, never before.
-    let probe = |bearer: Option<String>| async move {
-        let channel = tonic::transport::Endpoint::from_shared(format!("http://{addr}")).unwrap().connect_lazy();
-        let mut client = pb::ui_service_client::UiServiceClient::new(channel);
-        let mut req = tonic::Request::new(pb::HealthCheckRequest {});
-        if let Some(b) = bearer {
-            req.metadata_mut().insert("authorization", b.parse().unwrap());
-        }
-        client.health_check(req).await.unwrap_err().code()
-    };
-    assert_eq!(probe(None).await, tonic::Code::Unauthenticated);
-    assert_eq!(probe(Some(format!("Bearer {SIDECAR_TOKEN}"))).await, tonic::Code::Unimplemented);
+    // Nebo's health probe is token-gated too.
+    let channel = tonic::transport::Endpoint::from_shared(format!("http://{addr}")).unwrap().connect_lazy();
+    let mut ui = pb::ui_service_client::UiServiceClient::new(channel);
+    let refused = ui.health_check(tonic::Request::new(pb::HealthCheckRequest {})).await.unwrap_err();
+    assert_eq!(refused.code(), tonic::Code::Unauthenticated);
+
+    child.kill().unwrap();
+    child.wait().unwrap();
+}
+
+fn hmac(key: &str, nonce: &[u8], sidecar_token: &str, port: u16) -> Vec<u8> {
+    use hmac::Mac;
+    let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(key.as_bytes()).unwrap();
+    mac.update(nonce);
+    mac.update(sidecar_token.as_bytes());
+    mac.update(&port.to_be_bytes());
+    mac.finalize().into_bytes().to_vec()
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Nebo's health probe as Nebo sends it: the sidecar token and a fresh
+/// nonce. The real app (the calculator has no UI handler; the SDK serves the
+/// health check for it anyway) answers with the proof, computed here
+/// independently from the address it announced. A process that saw only the
+/// sidecar token — an imposter on the app's port — could at best key the
+/// HMAC with that, and that is not the proof.
+#[tokio::test]
+async fn it_proves_itself_to_nebos_health_probe() {
+    let (mut child, addr) = launch();
+    let nonce: Vec<u8> = (0..32u8).map(|i| i.wrapping_mul(37).wrapping_add(child.id() as u8)).collect();
+    let channel = tonic::transport::Endpoint::from_shared(format!("http://{addr}")).unwrap().connect_lazy();
+    let mut ui = pb::ui_service_client::UiServiceClient::new(channel);
+    let mut req = tonic::Request::new(pb::HealthCheckRequest {});
+    req.metadata_mut().insert("authorization", format!("Bearer {SIDECAR_TOKEN}").parse().unwrap());
+    req.metadata_mut().insert("x-nebo-challenge", hex(&nonce).parse().unwrap());
+    let answer = ui.health_check(req).await.expect("the probe is answered");
+    let presented = answer.metadata().get("x-nebo-proof").expect("with a proof").to_str().unwrap().to_string();
+    assert_eq!(presented, hex(&hmac(APP_TOKEN, &nonce, SIDECAR_TOKEN, addr.port())), "the proof Nebo checks");
+    assert_ne!(presented, hex(&hmac(SIDECAR_TOKEN, &nonce, SIDECAR_TOKEN, addr.port())), "an imposter's proof differs");
+    assert!(answer.into_inner().healthy);
+
+    // No UI handler: the app's own requests are not served.
+    let mut req = tonic::Request::new(pb::HttpRequest { method: "GET".into(), path: "x".into(), ..Default::default() });
+    req.metadata_mut().insert("authorization", format!("Bearer {SIDECAR_TOKEN}").parse().unwrap());
+    assert_eq!(ui.handle_request(req).await.unwrap_err().code(), tonic::Code::Unimplemented);
 
     child.kill().unwrap();
     child.wait().unwrap();
@@ -146,13 +180,15 @@ fn sigterm(pid: u32) {
 }
 
 #[test]
-fn it_will_not_start_without_the_sidecar_token() {
-    let out = Command::new(example())
-        .env_clear()
-        .env("NEBO_APP_TOKEN", APP_TOKEN)
-        .stdin(Stdio::piped())
-        .output()
-        .expect("run the example");
-    assert!(!out.status.success(), "it refuses to start");
-    assert!(out.stdout.is_empty(), "nothing announced, so nothing listens");
+fn it_will_not_start_without_both_tokens() {
+    for (name, value) in [("NEBO_APP_TOKEN", APP_TOKEN), ("NEBO_SIDECAR_TOKEN", SIDECAR_TOKEN)] {
+        let out = Command::new(example())
+            .env_clear()
+            .env(name, value)
+            .stdin(Stdio::piped())
+            .output()
+            .expect("run the example");
+        assert!(!out.status.success(), "it refuses to start with only {name}");
+        assert!(out.stdout.is_empty(), "nothing announced, so nothing listens");
+    }
 }
