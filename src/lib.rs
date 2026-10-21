@@ -10,6 +10,7 @@ pub mod comm;
 pub mod env;
 pub mod error;
 pub mod gateway;
+pub mod plugins;
 pub mod schema;
 pub mod schedule;
 pub mod tool;

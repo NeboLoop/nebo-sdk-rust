@@ -19,6 +19,8 @@ async-trait = "0.1"
 tokio-stream = { version = "0.1", features = ["net"] }
 hmac = "0.12"
 sha2 = "0.10"
+# Calls to Nebo's local API (loopback http only, so no TLS).
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
 
 [[example]]
 name = "calculator"
