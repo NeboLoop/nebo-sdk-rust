@@ -1,11 +1,12 @@
 [package]
 name = "nebo-sdk"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 description = "Official Rust SDK for building Nebo apps"
 license = "MIT"
 repository = "https://github.com/NeboLoop/nebo-sdk-rust"
 keywords = ["nebo", "grpc", "agent", "sdk"]
+exclude = ["codegen"]
 
 [dependencies]
 tonic = "0.13"
@@ -15,10 +16,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 async-trait = "0.1"
-tokio-stream = "0.1"
-
-[build-dependencies]
-tonic-build = "0.13"
+tokio-stream = { version = "0.1", features = ["net"] }
 
 [[example]]
 name = "calculator"

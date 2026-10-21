@@ -1,6 +1,7 @@
-/// Generated protobuf types.
+/// Generated protobuf types, vendored so building the SDK needs no `protoc`
+/// (regenerate with `cargo run --manifest-path codegen/Cargo.toml`).
 pub mod pb {
-    tonic::include_proto!("apps.v0");
+    include!("pb/apps.v0.rs");
 }
 
 pub mod app;

@@ -6,7 +6,7 @@ Official Rust SDK for building [Nebo](https://neboloop.com) apps.
 
 ```toml
 [dependencies]
-nebo-sdk = "0.1"
+nebo-sdk = "0.3"
 ```
 
 ## Quick Start
@@ -52,6 +52,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+Building needs no `protoc`: the generated gRPC code is vendored in
+`src/pb/`. After changing a file in `proto/`, regenerate it with
+`cargo run --manifest-path codegen/Cargo.toml` (that step needs `protoc`).
+
+## How Nebo runs your app
+
+`NeboApp::run` does all of this for you, the same on macOS, Linux and Windows:
+
+- It listens on `127.0.0.1` only, on a port the OS picks, and prints
+  `nebo-app-listening <address>` on stdout so Nebo knows where to connect.
+  Nothing on another computer can reach it.
+- It refuses every call that does not carry this launch's `NEBO_APP_TOKEN`
+  as `authorization: Bearer <token>`. Nebo sends it on every call.
+- It returns when its stdin closes (Nebo holds the other end, so this is how
+  the app notices Nebo is gone, however it went), on SIGTERM, or on Ctrl-C.
+
+Your code reads the rest from `app.env()`:
+
+| Field | Variable | What it is |
+|---|---|---|
+| `dir` | `NEBO_APP_DIR` | The app's code folder, replaced on every update |
+| `data_dir` | `NEBO_DATA_DIR` | The app's own data folder, kept across updates; also the working directory |
+| `api_url` | `NEBO_API_URL` | Nebo's local API, `http://127.0.0.1:<port>` |
+| `token` | `NEBO_APP_TOKEN` | This launch's secret: send it as `Authorization: Bearer <token>` to `api_url` |
+| `id`, `name`, `version` | `NEBO_APP_ID`, `NEBO_APP_NAME`, `NEBO_APP_VERSION` | From the manifest |
 
 ## Documentation
 
