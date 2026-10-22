@@ -1,0 +1,16 @@
+# Regenerates the vendored gRPC code from proto/ (needs `protoc`):
+#
+#   cargo run --manifest-path codegen/Cargo.toml
+#
+# Only maintainers run this, after a proto change. Building or using the SDK
+# never needs protoc.
+[package]
+name = "nebo-sdk-codegen"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+tonic-build = "0.13"

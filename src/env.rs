@@ -1,23 +1,39 @@
-/// Typed access to NEBO_APP_* environment variables set by Nebo's sandbox.
+/// Typed access to the environment Nebo launches an app's sidecar with.
 #[derive(Debug, Clone)]
 pub struct AppEnv {
+    /// `NEBO_APP_DIR`: the app's code folder (replaced on every update).
     pub dir: String,
-    pub sock_path: String,
+    /// `NEBO_APP_ID`: the app's id.
     pub id: String,
+    /// `NEBO_APP_NAME`: the app's name.
     pub name: String,
+    /// `NEBO_APP_VERSION`: the app's version.
     pub version: String,
+    /// `NEBO_DATA_DIR`: the app's own data folder, kept across updates; also
+    /// the sidecar's working directory.
     pub data_dir: String,
+    /// `NEBO_API_URL`: Nebo's local API, `http://127.0.0.1:<port>`.
+    pub api_url: String,
+    /// `NEBO_APP_TOKEN`: this launch's token for calling Nebo. Send it as
+    /// `Authorization: Bearer <token>` to `api_url`. Outbound only: Nebo never
+    /// sends it to the app, and the app never accepts it. (Nebo's calls to the
+    /// app carry a different token, `NEBO_SIDECAR_TOKEN`, which the SDK checks
+    /// and keeps out of `AppEnv`; a program the app starts inherits it from
+    /// the process environment unless the app clears it there.)
+    pub token: String,
 }
 
 impl AppEnv {
     pub fn load() -> Self {
+        let var = |name| std::env::var(name).unwrap_or_default();
         Self {
-            dir: std::env::var("NEBO_APP_DIR").unwrap_or_default(),
-            sock_path: std::env::var("NEBO_APP_SOCK").unwrap_or_default(),
-            id: std::env::var("NEBO_APP_ID").unwrap_or_default(),
-            name: std::env::var("NEBO_APP_NAME").unwrap_or_default(),
-            version: std::env::var("NEBO_APP_VERSION").unwrap_or_default(),
-            data_dir: std::env::var("NEBO_APP_DATA").unwrap_or_default(),
+            dir: var("NEBO_APP_DIR"),
+            id: var("NEBO_APP_ID"),
+            name: var("NEBO_APP_NAME"),
+            version: var("NEBO_APP_VERSION"),
+            data_dir: var("NEBO_DATA_DIR"),
+            api_url: var("NEBO_API_URL"),
+            token: var("NEBO_APP_TOKEN"),
         }
     }
 }
