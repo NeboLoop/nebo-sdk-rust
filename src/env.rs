@@ -18,7 +18,8 @@ pub struct AppEnv {
     /// `Authorization: Bearer <token>` to `api_url`. Outbound only: Nebo never
     /// sends it to the app, and the app never accepts it. (Nebo's calls to the
     /// app carry a different token, `NEBO_SIDECAR_TOKEN`, which the SDK checks
-    /// and keeps out of your code.)
+    /// and keeps out of `AppEnv`; a program the app starts inherits it from
+    /// the process environment unless the app clears it there.)
     pub token: String,
 }
 

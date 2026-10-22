@@ -26,7 +26,7 @@ pub struct NeboApp {
     schedule: Option<Box<dyn crate::schedule::ScheduleHandler>>,
     on_configure: Option<Box<dyn Fn(std::collections::HashMap<String, String>) + Send + Sync>>,
     /// `NEBO_SIDECAR_TOKEN`: the token every call from Nebo carries. Inbound
-    /// only, and never handed to the app's code.
+    /// only, and never in `AppEnv`.
     sidecar_token: String,
 }
 

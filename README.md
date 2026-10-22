@@ -66,8 +66,10 @@ Building needs no `protoc`: the generated gRPC code is vendored in
   Nothing on another computer can reach it.
 - It refuses every call that does not carry this launch's `NEBO_SIDECAR_TOKEN`
   as `authorization: Bearer <token>`. Nebo sends it on every call, including
-  its health probe (`UIService.HealthCheck`). The SDK keeps it out of your
-  code, and refuses the app's own `NEBO_APP_TOKEN` on incoming calls.
+  its health probe (`UIService.HealthCheck`). The SDK keeps it out of
+  `app.env()`, and refuses the app's own `NEBO_APP_TOKEN` on incoming calls.
+  It stays in the process environment, so a program your app starts inherits
+  it: clear it there (`Command::env_remove("NEBO_SIDECAR_TOKEN")`).
 - It answers Nebo's health probe with a proof: the probe carries a nonce in
   `x-nebo-challenge`, and the SDK answers with `x-nebo-proof` = hex
   HMAC-SHA256(key `NEBO_APP_TOKEN`, nonce || `NEBO_SIDECAR_TOKEN` || port as
