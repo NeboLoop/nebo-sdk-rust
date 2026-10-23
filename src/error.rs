@@ -19,6 +19,15 @@ pub enum NeboError {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// Nebo refused a call the app made (a plugin its manifest does not
+    /// grant, one that is not installed, ...): the status and Nebo's reason.
+    #[error("refused ({status}): {reason}")]
+    Refused { status: u16, reason: String },
+
+    /// A call to Nebo's API did not complete.
+    #[error("http error: {0}")]
+    Http(String),
+
     #[error("{0}")]
     Other(String),
 }

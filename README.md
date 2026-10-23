@@ -92,6 +92,38 @@ Your code reads the rest from `app.env()`:
 Two tokens, one direction each: if another process ever got hold of the app's
 port, the token Nebo sends there opens nothing in Nebo.
 
+## Running the bot's plugins
+
+A sidecar runs a plugin installed on the bot directly, with no AI in the
+middle: the same command and flags the app's employee passes to its
+`plugin__<slug>` tool, run by Nebo the same way (the installed version, the
+employee's account, the same billing).
+
+```rust
+use nebo_sdk::plugins::{PluginCall, Plugins};
+
+let plugins = Plugins::new(&nebo_sdk::AppEnv::load());
+let strip = plugins
+    .run("nebo-media", &PluginCall::new("strip").arg("in", "Media/Projects/reel/cut.mp4"), None)
+    .await?;
+
+// Long work: each line the plugin writes, as it writes it.
+let mut show = |line: &str| println!("{line}");
+let preview = plugins
+    .run("nebo-media", &PluginCall::new("preview").arg("in", "cut.mp4").timeout(600), Some(&mut show))
+    .await?;
+```
+
+- The app's manifest grants the plugin: `"plugin:nebo-media"` for every
+  command, `"plugin:nebo-media:strip"` for one. An app installed from the
+  marketplace needs the owner's OK first.
+- `ok: false` in the result is the plugin's own failure, its words in
+  `output`. A call Nebo refuses (403: not granted or not allowed; 404: not
+  installed or turned off) is `NeboError::Refused` with Nebo's reason.
+- The calls go to `api_url` with `NEBO_APP_TOKEN`:
+  `POST /api/v1/apps/<id>/plugins/<slug>/run`, and for long work
+  `GET /api/v1/apps/<id>/plugins/jobs/<job>` as an event stream.
+
 ## Documentation
 
 See [Creating Nebo Apps](https://neboloop.com/developers) for the full guide.
